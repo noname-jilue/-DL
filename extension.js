@@ -18,16 +18,17 @@ game.import("extension", function (lib, game, ui, get, ai, _status) {
                         `<div id="repo-link" style="font-weight: bold;">正在获取最新版本号</div>`
                     ); cNode = introNode.nextSibling;
                     let successHandler = (response) => {
-                        if (response.status == 200) {
-                            cNode.innerHTML += ' 成功';
-                            return response;
-                        } else {
+                        if (response.status >= 300) {
                             cNode.innerHTML += ` 失败<br>${response.status} ${response.statusText}`;
                             return Promise.reject(response);
+                        } else {
+                            cNode.innerHTML += ' 成功';
+                            return response;
                         }
                     }
                     let errorHandler = (error) => {
                         cNode.innerHTML += ` 失败<br>${error}`;
+                        console.log(error);
                         return Promise.reject(error);
                     };
                     responsePromise.then(successHandler, errorHandler)
@@ -38,7 +39,6 @@ game.import("extension", function (lib, game, ui, get, ai, _status) {
                             ); cNode = introNode.nextSibling;
                             let zipURI = data.zipball_url;
                             // TODO: add support for fastgit mirror once it supports region codeload.github.com
-                            // TODO: progress bar
                             return fetch(zipURI, {
                                 "headers": {
                                     "accept": "application/vnd.github.v3+json",
@@ -50,12 +50,31 @@ game.import("extension", function (lib, game, ui, get, ai, _status) {
                             });
                         })
                         .then(successHandler, errorHandler)
-                        .then(response => {
+                        .then(async response => {
                             introNode.insertAdjacentHTML('afterend',
                                 `<div id="repo-link" style="font-weight: bold;">正在下载…</div>`
                             ); cNode = introNode.nextSibling;
-                            debugger;
-                            return response.arrayBuffer();
+                            // progress bar
+                            cNode.insertAdjacentHTML('afterend',
+                                `<span id="repo-link" >0B</span>`
+                            ); pNode = cNode.nextSibling;
+                            // TODO: rewrite using the old fashioned XMLrequest / axios
+                            const reader = response.body.getReader();
+                            let receivedLength = 0;
+                            let chunks = [];
+                            while (true) {
+                                const { done, value } = await reader.read();
+                                if (done) {
+                                    break;
+                                }
+                                chunks.push(value);
+                                receivedLength += value.length;
+                                pNode.innerHTML = `${Math.floor(receivedLength / 1000)}B`;
+                                // if (receivedLength > 100) // debug
+                                //     break;
+                            }
+                            let blob = new Blob(chunks);
+                            return blob.arrayBuffer();
                         })
                         .then(successHandler, errorHandler)
                         .then(arrayBuffer => {
