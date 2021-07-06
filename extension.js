@@ -31,6 +31,7 @@ game.import("extension", function (lib, game, ui, get, ai, _status) {
                         console.log(error);
                         return Promise.reject(error);
                     };
+                    let controller = new AbortController();
                     responsePromise.then(successHandler, errorHandler)
                         .then(response => response.json())
                         .then(data => {
@@ -40,56 +41,53 @@ game.import("extension", function (lib, game, ui, get, ai, _status) {
                             let zipURI = data.zipball_url;
                             // TODO: add support for fastgit mirror once it supports region codeload.github.com
                             return fetch(zipURI, {
-                                "headers": {
+                                headers: {
                                     "accept": "application/vnd.github.v3+json",
                                     "accept-language": "en-US,en;q=0.9,zh-CN;q=0.8,zh;q=0.7",
                                     "cache-control": "no-cache",
                                     "pragma": "no-cache"
                                 },
-                                "method": "GET",
+                                method: "GET",
+                                signal: controller.signal,
                             });
                         })
                         .then(successHandler, errorHandler)
-                        .then(async response => {
+                        .then(response => {
                             introNode.insertAdjacentHTML('afterend',
-                                `<div id="repo-link" style="font-weight: bold;">正在下载…</div>`
+                                `<div id="repo-link" style="font-weight: bold;">正在下载约42M…</div>`
                             ); cNode = introNode.nextSibling;
                             // progress bar
                             cNode.insertAdjacentHTML('afterend',
                                 `<span id="repo-link" >0B</span>`
                             ); pNode = cNode.nextSibling;
-                            // TODO: rewrite using the old fashioned XMLrequest / axios
-                            const reader = response.body.getReader();
-                            let receivedLength = 0;
-                            let chunks = [];
-                            while (true) {
-                                const { done, value } = await reader.read();
-                                if (done) {
-                                    break;
-                                }
-                                chunks.push(value);
-                                receivedLength += value.length;
-                                pNode.innerHTML = `${Math.floor(receivedLength / 1000)}B`;
-                                // if (receivedLength > 100) // debug
-                                //     break;
-                            }
-                            let blob = new Blob(chunks);
-                            return blob.arrayBuffer();
-                        })
-                        .then(successHandler, errorHandler)
-                        .then(arrayBuffer => {
-                            introNode.insertAdjacentHTML('afterend',
-                                `<div id="repo-link" style="font-weight: bold;">正在安装拓展</div>`
-                            ); cNode = introNode.nextSibling;
-                            let callback = () => {
-                                cNode.innerHTML += ' 成功';
-                                introNode.insertAdjacentHTML('afterend',
-                                    `<div id="repo-link" style="font-weight: bold;">3秒后将重启游戏</div>`
-                                );
-                                setTimeout(game.reload, 3000);
+                            var req = new XMLHttpRequest();
+                            controller.abort(); // stop the fetch download
+                            console.log(response.url);
+                            req.open("GET", response.url, true);
+                            req.addEventListener("progress", evt => {
+                                pNode.innerHTML = `${Math.floor(evt.loaded / 1000) / 1000}MB`;
+                            }, false);
+                            // req.responseType = "arraybuffer";
+                            req.onerror = (evt) => {
+                                cNode.innerHTML += ` 失败<br>${evt.type}`;
+                                console.log(evt);
                             };
-                            game.importExtension(arrayBuffer, callback);
-                        });
+                            req.onload = function (e) {
+                                var arrayBuffer = req.response;
+                                introNode.insertAdjacentHTML('afterend',
+                                    `<div id="repo-link" style="font-weight: bold;">正在安装拓展</div>`
+                                ); cNode = introNode.nextSibling;
+                                let callback = () => {
+                                    cNode.innerHTML += ' 成功';
+                                    introNode.insertAdjacentHTML('afterend',
+                                        `<div id="repo-link" style="font-weight: bold;">3秒后将重启游戏</div>`
+                                    );
+                                    setTimeout(game.reload, 3000);
+                                };
+                                game.importExtension(arrayBuffer, callback);
+                            }
+                            req.send();
+                        })
 
                 },
             }
